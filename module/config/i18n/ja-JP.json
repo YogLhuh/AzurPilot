@@ -631,7 +631,8 @@
       "uiautomator2": "uiautomator2",
       "minitouch": "minitouch",
       "Hermit": "Hermit",
-      "MaaTouch": "MaaTouch"
+      "MaaTouch": "MaaTouch",
+      "nemu_ipc": "nemu_ipc"
     },
     "NemuIpcChannel": {
       "name": "NemuIpc チャネル順",

@@ -631,7 +631,8 @@
       "uiautomator2": "uiautomator2喵",
       "minitouch": "minitouch喵",
       "Hermit": "Hermit喵",
-      "MaaTouch": "MaaTouch喵"
+      "MaaTouch": "MaaTouch喵",
+      "nemu_ipc": "nemu_ipc"
     },
     "NemuIpcChannel": {
       "name": "NemuIpc 通道序喵",

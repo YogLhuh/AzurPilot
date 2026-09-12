@@ -122,7 +122,7 @@ Emulator:
       ]
   ControlMethod:
     value: MaaTouch
-    option: [ADB, uiautomator2, minitouch, Hermit, MaaTouch]
+    option: [ADB, uiautomator2, minitouch, Hermit, MaaTouch, nemu_ipc]
   NemuIpcChannel:
     value: auto
     option: [auto, rgba, bgra]

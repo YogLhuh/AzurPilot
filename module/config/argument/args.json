@@ -356,7 +356,8 @@
           "uiautomator2",
           "minitouch",
           "Hermit",
-          "MaaTouch"
+          "MaaTouch",
+          "nemu_ipc"
         ]
       },
       "NemuIpcChannel": {
