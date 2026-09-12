@@ -507,18 +507,6 @@ class NemuIpcImpl:
         image = np.ctypeslib.as_array(pixels_pointer.contents).reshape((self.height, self.width, 4))
         return image
 
-    def convert_xy(self, x, y):
-        """
-        将标准 ADB 坐标转换为 Nemu 坐标。
-        调用此方法前必须先更新 `self.height`。
-
-        Returns:
-            int, int
-        """
-        x, y = int(x), int(y)
-        x, y = self.height - y, x
-        return x, y
-
     @retry
     def down(self, x, y):
         """
@@ -526,10 +514,6 @@ class NemuIpcImpl:
         """
         if self.connect_id == 0:
             self.connect()
-        if self.height == 0:
-            self.get_resolution()
-
-        x, y = self.convert_xy(x, y)
 
         ret = self.run_func(
             self.lib.nemu_input_event_touch_down,
