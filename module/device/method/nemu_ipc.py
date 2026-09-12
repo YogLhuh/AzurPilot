@@ -346,7 +346,8 @@ class NemuIpcImpl:
 
         Args:
             raw: nemu_capture_display 的原始帧（4 通道、上下颠倒）。
-            truth: ADB screencap 的 RGB 真值帧，尺寸与 raw 一致。
+            truth: ADB screencap 的 RGB 真值帧（RGB 内存，与代码库其余
+                截图一致），尺寸与 raw 一致。
 
         Returns:
             str: 'rgba' / 'bgra'；画面无特征（如全黑加载页，两种解释
@@ -709,6 +710,9 @@ class NemuIpc(Platform):
             if truth is None:
                 logger.warning('[设备-NemuIpc] 通道序校准失败: ADB screencap 无输出')
                 return None
+            # imdecode 得到 BGR 内存，_decide_channel_order 按代码库统一的
+            # RGB 内存比较，不转换会让判定恒定取反（红蓝反转，见单元测试）
+            cv2.cvtColor(truth, cv2.COLOR_BGR2RGB, dst=truth)
             raw = impl.screenshot(timeout=2)
             result = NemuIpcImpl._decide_channel_order(raw, truth)
             if result is None:
