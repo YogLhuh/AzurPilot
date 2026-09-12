@@ -382,6 +382,7 @@ class GeneratedConfig:
     Commission_DoMajorCommission = False
     Commission_CommissionNotifyReward = False
     Commission_CommissionNotifyRewardStatistics = True
+    Commission_DetectShipDrop = False  # True, False
     Commission_GemNotify = True
     Commission_GemStatistics = False
     Commission_GemStatisticsPeriod = 'month'  # today, week, month
