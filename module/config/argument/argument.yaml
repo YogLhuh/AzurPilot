@@ -123,6 +123,13 @@ Emulator:
   ControlMethod:
     value: MaaTouch
     option: [ADB, uiautomator2, minitouch, Hermit, MaaTouch]
+  NemuIpcChannel:
+    value: auto
+    option: [auto, rgba, bgra]
+  NemuIpcChannelDetected:
+    type: stored
+    value: null
+    display: hide
   GameSettings:
     type: checkbox
     value: false

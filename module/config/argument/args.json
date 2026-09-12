@@ -359,6 +359,20 @@
           "MaaTouch"
         ]
       },
+      "NemuIpcChannel": {
+        "type": "select",
+        "value": "auto",
+        "option": [
+          "auto",
+          "rgba",
+          "bgra"
+        ]
+      },
+      "NemuIpcChannelDetected": {
+        "type": "stored",
+        "value": null,
+        "display": "hide"
+      },
       "GameSettings": {
         "type": "checkbox",
         "value": false,

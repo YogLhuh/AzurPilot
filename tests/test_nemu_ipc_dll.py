@@ -10,6 +10,9 @@ import shutil
 import tempfile
 import unittest
 
+import cv2
+import numpy as np
+
 from module.device.method.nemu_ipc import NemuIpcImpl
 
 
@@ -162,6 +165,34 @@ class TestBgraLayout(unittest.TestCase):
         self.assertFalse(impl.bgra_layout)
         impl.ipc_dll = r'C:\MuMu\nx_main\sdk\external_renderer_ipc.dll'
         self.assertTrue(impl.bgra_layout)
+
+
+class TestDecideChannelOrder(unittest.TestCase):
+    """ADB 真值帧通道序判定：与真值比对 RGBA / BGRA 两种解释的误差。"""
+
+    def _make_raw(self, bgra_frame):
+        """构造原始捕获帧：真实画面为 bgra_frame（RGB、方向已正），
+        nemu_capture_display 返回 BGRA 序、上下颠倒。"""
+        raw = cv2.cvtColor(bgra_frame, cv2.COLOR_RGB2BGRA)
+        return cv2.flip(raw, 0)
+
+    def test_bgra_frame_detected_as_bgra(self):
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        frame[:, :, 0] = 200  # 蓝色画面
+        raw = self._make_raw(frame)
+        self.assertEqual(NemuIpcImpl._decide_channel_order(raw, frame), 'bgra')
+
+    def test_rgba_frame_detected_as_rgba(self):
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        frame[:, :, 2] = 200  # 红色画面
+        raw = cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA)
+        raw = cv2.flip(raw, 0)
+        self.assertEqual(NemuIpcImpl._decide_channel_order(raw, frame), 'rgba')
+
+    def test_black_screen_returns_none(self):
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        raw = self._make_raw(frame)
+        self.assertIsNone(NemuIpcImpl._decide_channel_order(raw, frame))
 
 
 if __name__ == '__main__':
