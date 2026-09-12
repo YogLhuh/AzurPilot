@@ -626,7 +626,7 @@
     },
     "ControlMethod": {
       "name": "コントロール方式を選択",
-      "help": "速度: minitouch > Hermit >>> uiautomator2 ~= ADB\nminitouchを推奨。vmos下を除き、Hermitは非推奨。",
+      "help": "クリック・スワイプの注入方式。速度: minitouch ≈ MaaTouch > ADB >>> uiautomator2。MaaTouch を推奨（minitouch は新しい Android 端末では不安定な場合があります）。\n⚠️ nemu_ipc はスクリーンショット方式が nemu_ipc の場合に自動で連動します（起動時）。注意：nemu_ipc のタッチ注入はエミュレータ内部 RPC 経由のため、低スペック PC ではスワイプが飛びやすく、稀にハングしてクリックが欠落することがあります。異常があれば minitouch / MaaTouch に戻してください。",
       "ADB": "ADB",
       "uiautomator2": "uiautomator2",
       "minitouch": "minitouch",

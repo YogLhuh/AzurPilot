@@ -626,7 +626,7 @@
     },
     "ControlMethod": {
       "name": "Select Control Method",
-      "help": "Speed: minitouch > Hermit >>> uiautomator2 ~= ADB\nRecommended: minitouch. Not recommended: Hermit unless running under vmos.",
+      "help": "Input injection method for clicks and swipes. Speed: minitouch ≈ MaaTouch > ADB >>> uiautomator2. Recommended: MaaTouch (minitouch can be unstable on newer Android devices).\n⚠️ nemu_ipc must be paired with the nemu_ipc screenshot method (auto-paired at startup when screenshot is set to nemu_ipc). Caution: nemu_ipc touch injection goes through the emulator's internal RPC; on low-end PCs swipes may lose steps and drags may deform, and occasional hangs can drop clicks. Switch back to minitouch / MaaTouch if swiping misbehaves.",
       "ADB": "ADB",
       "uiautomator2": "uiautomator2",
       "minitouch": "minitouch",

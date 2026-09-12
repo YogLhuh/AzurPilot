@@ -626,7 +626,7 @@
     },
     "ControlMethod": {
       "name": "选择控制方案",
-      "help": "速度: minitouch > Hermit >>> uiautomator2 ~= ADB\n建议选minitouch，不建议选Hermit除非在vmos下",
+      "help": "点击/滑动的注入方式。速度: minitouch ≈ MaaTouch > ADB >>> uiautomator2，推荐 MaaTouch（minitouch 在部分新安卓设备上不稳定）。\n⚠️ nemu_ipc 需与截图方式配套使用（截图选 nemu_ipc 时启动会自动联动）：其触控走模拟器内部 RPC，低性能电脑上滑动易丢步、拖拽易变形，调用偶发挂死会丢失点击；滑动或拖拽异常时请改回 minitouch / MaaTouch。",
       "ADB": "ADB",
       "uiautomator2": "uiautomator2",
       "minitouch": "minitouch",
