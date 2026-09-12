@@ -261,6 +261,9 @@ class Benchmark(DaemonBase, CampaignUI):
 
         if self.device.nemu_ipc_available():
             screenshot.append('nemu_ipc')
+            # nemu_ipc 也实现了点击（Control.click_methods 已注册），纳入控制基准，
+            # 与截图配套检查（method_check）保持一致
+            click.append('nemu_ipc')
         if self.device.ldopengl_available():
             screenshot.append('ldopengl')
         if self.device.is_bluestacks_air:
