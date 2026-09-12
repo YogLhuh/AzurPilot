@@ -11519,6 +11519,10 @@
         "type": "checkbox",
         "value": false
       },
+      "FavouriteOnly": {
+        "type": "checkbox",
+        "value": true
+      },
       "BackupEnable": {
         "type": "checkbox",
         "value": true

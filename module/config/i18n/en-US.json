@@ -2490,6 +2490,10 @@
       "name": "Low Favorability Priority",
       "help": "Ships will be selected in ascending order of favorability"
     },
+    "FavouriteOnly": {
+      "name": "Only Pick from Favorited Ships",
+      "help": "When enabled, only ships marked as favourite in the dock are picked as secretary. Disable it to pick from all ships by rarity and favorability"
+    },
     "BackupEnable": {
       "name": "Backup Secretary",
       "help": "Use ships in the secretary group as backup secretaries and prioritize switching to them"

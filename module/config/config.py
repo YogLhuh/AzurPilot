@@ -413,11 +413,13 @@ class AzurLaneConfig(ConfigUpdater, ManualConfig, GeneratedConfig, ConfigWatcher
         limit_next_run(["OpsiPreventActionPointOverflow"], limit=now + timedelta(hours=48, seconds=-1))
         # IslandPearlSell 按周调度，合法 NextRun 可能超过 24 小时。
         limit_next_run(["IslandPearlSell"], limit=now + timedelta(days=8, seconds=-1))
-        # 通用兜底保留 24 小时调度的少量误差空间，避免刚好延后一天的任务被重置。
-        limit_next_run(
-            [task for task in self.args.keys() if task != "OpsiPreventActionPointOverflow"],
-            limit=now + timedelta(hours=25, seconds=-1),
-        )
+
+        # 此处刻意不做「所有任务不得超过 N 小时」的通用兜底。
+        # 各任务的合法调度周期差异极大：秘书舰按好感度增长最长 22.5 天
+        # ((90 - 好感度) * 6 小时)、大世界跨月 31 天、珍珠采购按周 8 天。
+        # 通用上限无法区分「任务自己安排的合法长休眠」和「用户手改的远期时间」，
+        # 只会把前者重置成立刻运行，让任务陷入热循环（秘书舰曾因此在 38 分钟
+        # 内被调起 219 次）。确需限制周期的任务，在上面逐个声明。
 
         """
         强制覆盖任意配置项。

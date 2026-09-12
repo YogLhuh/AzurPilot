@@ -191,14 +191,15 @@ class Secretary(SecretaryDockMixin,UI):
         """
         在船坞中搜索并选中候选秘书舰。
 
-        初始化收藏过滤与稀有度筛选，搜索结束后恢复船坞状态。
+        按 Secretary_FavouriteOnly 决定是否开启「常用」过滤，
+        再叠加稀有度筛选，搜索结束后恢复船坞状态。
 
         Returns:
             bool: 是否成功选中秘书舰（尚未确认）。
         """
         logger.hr("Choose Secretary")
 
-        self.dock_favourite_set(True)
+        self.dock_favourite_set(self.config.Secretary_FavouriteOnly)
         ship = self.search_ship()
 
         if ship is None:

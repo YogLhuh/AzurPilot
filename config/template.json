@@ -2182,6 +2182,7 @@
     "Secretary": {
       "CustomFilter": "ultra > super_rare > elite > rare > common",
       "LowFavorabilityPriority": false,
+      "FavouriteOnly": true,
       "BackupEnable": true,
       "CheckInterval": 0,
       "Notify": true,
