@@ -227,12 +227,9 @@ class Device(Screenshot, Control, AppControl, Input):
         from module.daemon.benchmark import Benchmark
         bench = Benchmark(config=self.config, device=self)
         method = bench.run_simple_screenshot_benchmark()
-        # 写入配置
+        # 写入配置（控制方式不做联动改写，尊重用户手动选择）
         with self.config.multi_set():
             self.config.Emulator_ScreenshotMethod = method
-            # 基准测试选中 nemu_ipc 时，控制方式同步配套（与 method_check 一致）
-            if method == 'nemu_ipc':
-                self.config.Emulator_ControlMethod = 'nemu_ipc'
 
     def run_simple_ocr_benchmark(self):
         """
@@ -287,27 +284,14 @@ class Device(Screenshot, Control, AppControl, Input):
                            f'回退到auto')
             self.config.Emulator_ScreenshotMethod = 'auto'
 
-        # nemu_ipc 截图和控制必须配套使用，保证截图通路与触控通路一致。
-        # 放在末尾：先等上方守卫把截图方式回退完成，避免非 MuMu 环境下
-        # 截图回退 auto 后控制仍悬空在 nemu_ipc 上。
-        #
-        # ⚠️ 可能存在的问题（上游曾因此弃用强制配套，恢复前请知悉）：
-        # 1. 慢电脑上滑动易丢步：nemu_ipc 触控走模拟器内部 RPC 逐点连续注入，
-        #    低性能机器上 RPC 排队会拖慢注入节奏，表现为滑动距离不足、拖拽
-        #    轨迹变形。上游 LmeSzinc 正是因此注释了本配套（2024-04 提交
-        #    76da1ce13「bad swipes on slow PC」），仅保留 nemu_ipc 作截图加速。
-        # 2. 调用偶发挂死：nemu_ipc 依赖模拟器进程响应，卡死由 run_func() 的
-        #    0.5 秒超时强杀兜底；控制路径挂死会丢失点击、任务卡住，后果比
-        #    截图挂死重。
-        # 3. 后台挂机保活/多开 display 等兼容问题对触控同样生效。
-        # 使用中若出现滑动距离不足或拖不动，把截图与控制一并换回
-        # minitouch/MaaTouch 即可（截图换掉后本检查不会再强制改回 nemu_ipc）。
-        if self.config.Emulator_ScreenshotMethod == 'nemu_ipc' and self.config.Emulator_ControlMethod != 'nemu_ipc':
-            logger.warning('[设备-方法] 截图方式为nemu_ipc，控制方式配套改为nemu_ipc')
-            self.config.Emulator_ControlMethod = 'nemu_ipc'
-        if self.config.Emulator_ScreenshotMethod != 'nemu_ipc' and self.config.Emulator_ControlMethod == 'nemu_ipc':
-            logger.warning('[设备-方法] 截图方式非nemu_ipc，控制方式nemu_ipc回退为minitouch')
-            self.config.Emulator_ControlMethod = 'minitouch'
+        # nemu_ipc 控制不做强制配套，截图与控制通路相互独立，混搭（nemu_ipc 截图 +
+        # MaaTouch/minitouch 控制）完全可用且为推荐形态。
+        # 历史说明：上游 2024-04 曾加入强制配套（2a74c338a），三天后因「慢 PC 上
+        # nemu_ipc 滑动丢步（bad swipes on slow PC，76da1ce13）」注释弃用。本仓库
+        # 短暂恢复过强制联动，实测会静默覆盖用户手动选择的 MaaTouch，故再次取消。
+        # nemu_ipc 控制保留为 ControlMethod 可选项（帮助文本含警告）：其触控走模拟器
+        # 内部 RPC，低性能电脑上滑动易丢步、拖拽易变形，调用偶发挂死会丢失点击；
+        # 是否使用由用户自行决定，出现滑动/拖拽异常时换回 minitouch/MaaTouch 即可。
 
     def handle_night_commission(self, daily_trigger='21:00', threshold=30):
         """
