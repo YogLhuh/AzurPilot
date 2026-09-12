@@ -241,6 +241,8 @@ class NemuIpcImpl:
         if version is None:
             version = self.detect_version(nemu_folder, instance_id)
         self.version: str = version
+        # 触摸坐标是否需要在本次层旋转，见 _resolve_rotate_xy()
+        self.rotate_xy: bool = self._resolve_rotate_xy(version)
 
         # 尝试从多个路径加载 DLL，实例版本的 SDK 优先
         list_dll = []
@@ -507,15 +509,42 @@ class NemuIpcImpl:
         image = np.ctypeslib.as_array(pixels_pointer.contents).reshape((self.height, self.width, 4))
         return image
 
+    @staticmethod
+    def _resolve_rotate_xy(version: str) -> bool:
+        """判断是否需要把标准 ADB 坐标旋转成 Nemu 显示缓冲坐标。
+
+        MuMu12 的 IPC 直接把坐标注入旋转 90° 的显示缓冲，需要本层做
+        (height - y, x)；MuMu15 的 external_renderer_ipc.dll 内部已经按
+        rotation=90 换算过（调用时 DLL 会打印
+        "after convert, x_point=..., y_point=..."），再旋转一次会让所有点击
+        落到二次旋转后的位置，表现为「想点 A 却触发了 B」。
+
+        Args:
+            version (str): 实例版本，如 '12.0' / '15.0'，未知时为 None。
+
+        Returns:
+            bool: True 表示本层仍需旋转坐标。
+        """
+        try:
+            major = int(str(version).split(".")[0])
+        except (TypeError, ValueError):
+            # 版本未知时保持历史行为，避免影响老版本 MuMu
+            return True
+        return major < 15
+
     def convert_xy(self, x, y):
         """
         将标准 ADB 坐标转换为 Nemu 坐标。
         调用此方法前必须先更新 `self.height`。
 
+        MuMu15 及以后由 DLL 自行处理显示缓冲旋转，此时坐标原样传入。
+
         Returns:
             int, int
         """
         x, y = int(x), int(y)
+        if not self.rotate_xy:
+            return x, y
         x, y = self.height - y, x
         return x, y
 

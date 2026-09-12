@@ -195,5 +195,52 @@ class TestDecideChannelOrder(unittest.TestCase):
         self.assertIsNone(NemuIpcImpl._decide_channel_order(raw, frame))
 
 
+class TestTouchCoordinateSpace(unittest.TestCase):
+    """触摸坐标的显示缓冲旋转按模拟器版本区分。
+
+    MuMu12 的 IPC 需要本层把标准坐标旋转成显示缓冲坐标；MuMu15 的
+    external_renderer_ipc.dll 内部已经按 rotation=90 换算过，本层再旋转会让
+    所有点击落到二次旋转后的位置，表现为「想点 A 却触发了 B」。
+    """
+
+    def test_version_gate(self):
+        self.assertFalse(NemuIpcImpl._resolve_rotate_xy('15.0'))
+        self.assertFalse(NemuIpcImpl._resolve_rotate_xy('16.0'))
+        self.assertTrue(NemuIpcImpl._resolve_rotate_xy('12.0'))
+        self.assertTrue(NemuIpcImpl._resolve_rotate_xy('3.8.13'))
+        self.assertTrue(NemuIpcImpl._resolve_rotate_xy(None))
+        self.assertTrue(NemuIpcImpl._resolve_rotate_xy('unknown'))
+
+    def _build(self, version):
+        import ctypes as _ctypes
+
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        folder = os.path.join(root, 'nx_device', version, 'shell', 'sdk')
+        os.makedirs(folder)
+        with open(os.path.join(folder, 'external_renderer_ipc.dll'), 'w') as f:
+            f.write('fake')
+        original = _ctypes.CDLL
+
+        class _FakeLib:
+            pass
+
+        _ctypes.CDLL = lambda path, *a, **k: _FakeLib()
+        try:
+            impl = NemuIpcImpl(nemu_folder=root, instance_id=0, version=version)
+        finally:
+            _ctypes.CDLL = original
+        impl.height = 720
+        return impl
+
+    def test_mumu15_passes_touch_xy_through(self):
+        impl = self._build('15.0')
+        self.assertEqual(impl.convert_xy(17, 241), (17, 241))
+
+    def test_mumu12_rotates_touch_xy(self):
+        impl = self._build('12.0')
+        self.assertEqual(impl.convert_xy(17, 241), (720 - 241, 17))
+
+
 if __name__ == '__main__':
     unittest.main()
