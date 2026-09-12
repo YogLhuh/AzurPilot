@@ -6,6 +6,17 @@ from module.webui.process_manager import ProcessManager
 from module.webui.setting import State
 
 
+class _InlineThread:
+    """同步执行的线程桩：start() 直接运行 target，消除收尾线程的竞态。"""
+
+    def __init__(self, target, args=(), name=None, daemon=None):
+        self._target = target
+        self._args = args
+
+    def start(self):
+        self._target(*self._args)
+
+
 class TestProcessManagerRegistry(unittest.TestCase):
     def setUp(self):
         self.original_manager = State.manager
@@ -476,7 +487,10 @@ class TestProcessManagerRegistry(unittest.TestCase):
         process.is_alive.return_value = False
         process.exitcode = 0
 
-        with patch("module.webui.process_manager.Process", return_value=process) as cls:
+        with (
+            patch("module.webui.process_manager.Process", return_value=process) as cls,
+            patch("module.webui.process_manager.threading.Thread", _InlineThread),
+        ):
             manager._run_manual_stop_action_locked()
 
         cls.assert_called_once_with(
@@ -495,6 +509,7 @@ class TestProcessManagerRegistry(unittest.TestCase):
 
         with (
             patch("module.webui.process_manager.Process", return_value=process),
+            patch("module.webui.process_manager.threading.Thread", _InlineThread),
             patch.object(
                 ProcessManager, "_terminate_manual_stop_action"
             ) as terminate,
