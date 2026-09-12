@@ -9,6 +9,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -230,6 +231,100 @@ class TestCalibrateChannelOrder(unittest.TestCase):
         frame[:, :, 0] = 200  # 红色画面
         raw = cv2.flip(cv2.cvtColor(frame, cv2.COLOR_RGB2BGRA), 0)
         self.assertEqual(self._calibrate(frame, raw), 'bgra')
+
+
+class TestDecideChannelOrderRobustness(unittest.TestCase):
+    """判定要对采样间隔内的画面变化与分辨率差保持鲁棒，
+    并在红蓝接近时承认判不出来，交给调用方稍后重试。
+    """
+
+    @staticmethod
+    def _frames(frame):
+        """由 RGB 画面构造 nemu 原始帧（RGBA、上下颠倒）。"""
+        return cv2.flip(cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA), 0), frame
+
+    def test_shifted_truth_still_decides(self):
+        """真值帧与原始帧相差半帧画面（动画）时仍能判定通道序。"""
+        frame = np.zeros((128, 128, 3), dtype=np.uint8)
+        frame[:64, :, 2] = 200  # 上半蓝
+        frame[64:, :, 0] = 200  # 下半红
+        raw, truth = self._frames(frame)
+        shifted = np.roll(truth, 8, axis=0)  # 模拟两个采样之间的位移
+        self.assertEqual(NemuIpcImpl._decide_channel_order(raw, shifted), 'rgba')
+
+    def test_truth_resolution_mismatch_is_resized(self):
+        """ADB 真值与 IPC 缓冲分辨率不一致时应缩放后比较，而不是抛异常。"""
+        frame = np.zeros((128, 128, 3), dtype=np.uint8)
+        frame[:, :, 2] = 200  # 纯蓝
+        raw, truth = self._frames(frame)
+        smaller = cv2.resize(truth, (64, 64), interpolation=cv2.INTER_AREA)
+        self.assertEqual(NemuIpcImpl._decide_channel_order(raw, smaller), 'rgba')
+
+    def test_nearly_symmetric_color_is_inconclusive(self):
+        """红蓝接近的画面（灰阶/单色 UI）判不出通道序，应返回 None。"""
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        frame[:, :, 0] = 100
+        frame[:, :, 1] = 60
+        frame[:, :, 2] = 101
+        raw, truth = self._frames(frame)
+        self.assertIsNone(NemuIpcImpl._decide_channel_order(raw, truth))
+
+
+class TestEnsureChannelOrder(unittest.TestCase):
+    """未校准时的临时值选择与冷却重试。
+
+    启动瞬间多为黑屏加载页，校准会返回 None；若就此固定成按 SDK 路径的
+    推断值，整个会话都会红蓝互换（实测 MuMu15.0 nx_device 为 RGBA，而推断
+    会说 BGRA），所以要能拿到上次实测值并在稍后自动纠正。
+    """
+
+    class _Config:
+        def __init__(self, manual='auto', detected=''):
+            self.Emulator_NemuIpcChannel = manual
+            self.Emulator_NemuIpcChannelDetected = detected
+
+    class _Impl:
+        def __init__(self, bgra_layout=True):
+            self.bgra_layout = bgra_layout
+            self.channel_order = None
+            self.channel_order_verified = False
+            self.channel_order_last_try = 0.0
+
+    class _Host(NemuIpc):
+        def __init__(self, config, results):
+            self.config = config
+            self.results = list(results)
+            self.calls = 0
+
+        def nemu_ipc_calibrate_channel(self, impl):
+            self.calls += 1
+            return self.results.pop(0) if self.results else None
+
+    def test_manual_config_wins_and_skips_calibration(self):
+        config = self._Config(manual='bgra', detected='rgba')
+        host = self._Host(config, ['rgba'])
+        impl = self._Impl()
+        self.assertEqual(NemuIpc._ensure_channel_order(host, impl), 'bgra')
+        self.assertEqual(host.calls, 0)
+        self.assertTrue(impl.channel_order_verified)
+
+    def test_fallback_prefers_last_measured_value(self):
+        config = self._Config(manual='auto', detected='rgba')
+        host = self._Host(config, [None])  # 校准失败（如黑屏）
+        impl = self._Impl(bgra_layout=True)  # 路径推断会说 bgra
+        self.assertEqual(NemuIpc._ensure_channel_order(host, impl), 'rgba')
+        self.assertFalse(impl.channel_order_verified)
+
+    def test_retry_corrects_after_featureless_start(self):
+        config = self._Config(manual='auto', detected='')
+        host = self._Host(config, [None, 'rgba'])
+        impl = self._Impl(bgra_layout=True)
+        with mock.patch.object(NemuIpc, 'CHANNEL_RECALIBRATE_INTERVAL', 0.0):
+            self.assertEqual(NemuIpc._ensure_channel_order(host, impl), 'bgra')
+            self.assertEqual(NemuIpc._ensure_channel_order(host, impl), 'rgba')
+        self.assertTrue(impl.channel_order_verified)
+        self.assertEqual(config.Emulator_NemuIpcChannelDetected, 'rgba')
+        self.assertEqual(host.calls, 2)
 
 
 if __name__ == '__main__':

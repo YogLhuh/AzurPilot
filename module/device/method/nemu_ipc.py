@@ -300,9 +300,14 @@ class NemuIpcImpl:
         self.connect_id: int = 0
         self.width = 0
         self.height = 0
-        # 截图通道序（'rgba' / 'bgra'），由 screenshot_nemu_ipc 首帧前解析：
-        # 手动配置 > ADB 真值校准 > 按 SDK 架构推断，见 NemuIpc._resolve_channel_order
+        # 截图通道序（'rgba' / 'bgra'），由 screenshot_nemu_ipc 每帧解析：
+        # 手动配置 > 本会话已校准值 > ADB 真值校准 > 上次实测值/架构推断，
+        # 见 NemuIpc._ensure_channel_order
         self.channel_order: str = None
+        # 通道序是否已确认（校准成功或手动指定）；未确认时会带冷却重试：
+        # 启动瞬间常是黑屏加载页，校准会落空，若就此固定成推断值，整程都会红蓝互换
+        self.channel_order_verified: bool = False
+        self.channel_order_last_try: float = 0.0
 
     @staticmethod
     def detect_version(nemu_folder: str, instance_id: int):
@@ -328,39 +333,66 @@ class NemuIpcImpl:
     @property
     def bgra_layout(self) -> bool:
         """
-        nemu_capture_display 返回的像素通道序按 SDK 来源架构区分：
-        新架构（nx_device/<版本> 与 nx_main，MuMu 5.0+ 安装布局）返回
-        BGRA，经典布局（shell/sdk，MuMu 12 3.x/4.x）返回 RGBA。
-        实测 12.0 与 15.0 的 nx_device SDK 均为 BGRA，与版本号无关。
+        按 SDK 来源架构推断通道序，仅在自动校准拿不到结果时兜底。
+
+        历史推断（新架构 nx_device/<版本> 与 nx_main 为 BGRA、经典布局
+        shell/sdk 为 RGBA）出自与校准相同的比对代码，在校准修正 BGR/RGB
+        混用前后结论可能相反——实测 MuMu15.0 的 nx_device SDK 为 RGBA。
+        因此这里只当最后的兜底：能校准时以校准结果为准，校不准还会继续重试。
 
         Returns:
-            bool: 是否为 BGRA 通道序。
+            bool: 推断是否为 BGRA 通道序。
         """
         path = self.ipc_dll.replace('\\', '/')
         return '/nx_device/' in path or '/nx_main/' in path
+
+    # 通道序判定前先降采样：ADB 真值与 IPC 帧之间存在采样间隔，
+    # 动画/撕裂造成的位移不应压过颜色通道特征。
+    CHANNEL_COMPARE_SCALE = 8
+    # 两种解释与真值的差距小于该值（0-255）时视为判不准，交由调用方稍后重试。
+    CHANNEL_DECIDE_MARGIN = 2.0
 
     @staticmethod
     def _decide_channel_order(raw, truth):
         """
         用 ADB screencap 真值帧判定原始捕获的通道序。
 
+        比对前把两侧降采样，真值与原始帧分辨率不一致时先缩放到同一尺寸。
+
         Args:
             raw: nemu_capture_display 的原始帧（4 通道、上下颠倒）。
             truth: ADB screencap 的 RGB 真值帧（RGB 内存，与代码库其余
-                截图一致），尺寸与 raw 一致。
+                截图一致）。
 
         Returns:
-            str: 'rgba' / 'bgra'；画面无特征（如全黑加载页，两种解释
-                均与真值几乎一致）时返回 None。
+            str: 'rgba' / 'bgra'；画面无特征（如全黑加载页）或两种解释
+                差距过小（如灰阶画面）时返回 None。
         """
         def prep(interpretation):
             img = cv2.cvtColor(raw, interpretation)
             cv2.flip(img, 0, dst=img)
             return img
 
-        d_rgba = float(np.mean(cv2.absdiff(prep(cv2.COLOR_RGBA2RGB), truth)))
-        d_bgra = float(np.mean(cv2.absdiff(prep(cv2.COLOR_BGRA2RGB), truth)))
+        def shrink(img):
+            height, width = img.shape[:2]
+            scale = NemuIpcImpl.CHANNEL_COMPARE_SCALE
+            return cv2.resize(
+                img, (max(1, width // scale), max(1, height // scale)),
+                interpolation=cv2.INTER_AREA)
+
+        raw_rgba = prep(cv2.COLOR_RGBA2RGB)
+        if truth.shape[:2] != raw_rgba.shape[:2]:
+            truth = cv2.resize(
+                truth, (raw_rgba.shape[1], raw_rgba.shape[0]),
+                interpolation=cv2.INTER_AREA)
+        i_rgba, i_bgra = shrink(raw_rgba), shrink(prep(cv2.COLOR_BGRA2RGB))
+        truth = shrink(truth)
+
+        d_rgba = float(np.mean(cv2.absdiff(i_rgba, truth)))
+        d_bgra = float(np.mean(cv2.absdiff(i_bgra, truth)))
         if d_rgba < 3 and d_bgra < 3:
+            return None
+        if abs(d_rgba - d_bgra) < NemuIpcImpl.CHANNEL_DECIDE_MARGIN:
             return None
         return 'rgba' if d_rgba <= d_bgra else 'bgra'
 
@@ -722,38 +754,82 @@ class NemuIpc(Platform):
             logger.warning(f'[设备-NemuIpc] 通道序校准失败: {e}')
             return None
 
-    def _resolve_channel_order(self, impl) -> str:
-        """
-        确定截图通道序：手动配置 > ADB 真值校准（auto）> 按 SDK 架构推断。
+    # 未校准时的重试间隔（秒）。启动瞬间常是黑屏加载页，校准会落空；
+    # 若只做一次就沿用推断值，整个会话都会红蓝互换，因此带冷却重试。
+    CHANNEL_RECALIBRATE_INTERVAL = 2.0
 
-        auto 校准成功时把实测值写入配置（Emulator.NemuIpcChannelDetected）
-        持久化，供用户查看；配置文件随 MuMu 更新后再次启动自动重新校准。
+    def _fallback_channel_order(self, impl) -> str:
+        """
+        校准尚未成功时使用的临时通道序。
+
+        优先复用上次会话校准成功并持久化的实测值
+        （Emulator.NemuIpcChannelDetected），其次才按 SDK 架构推断；两者都只是
+        过渡值，_ensure_channel_order() 会继续重试校准。
+
+        Args:
+            impl (NemuIpcImpl): 已连接的 IPC 实例。
+
+        Returns:
+            str: 'rgba' / 'bgra'
+        """
+        detected = str(getattr(self.config, 'Emulator_NemuIpcChannelDetected', '') or '')
+        if detected in ('rgba', 'bgra'):
+            return detected
+        return 'bgra' if impl.bgra_layout else 'rgba'
+
+    def _ensure_channel_order(self, impl) -> str:
+        """
+        确定本次截图使用的通道序。
+
+        优先级：手动配置 > 本会话已校准值 > ADB 真值校准 > 上次实测值/架构推断。
+        未确认（未校准）时按 CHANNEL_RECALIBRATE_INTERVAL 冷却重试，避免加载页
+        黑屏等无特征画面让校准落空后整程用错通道序；校准成功时把实测值写入配置
+        （Emulator.NemuIpcChannelDetected）持久化，供下次兜底并供用户查看。
+
+        Args:
+            impl (NemuIpcImpl): 已连接的 IPC 实例。
+
+        Returns:
+            str: 'rgba' / 'bgra'
         """
         order = str(self.config.Emulator_NemuIpcChannel or 'auto')
         if order in ('rgba', 'bgra'):
-            logger.info(f'[设备-NemuIpc] 通道序使用手动配置: {order}')
+            if impl.channel_order != order:
+                logger.info(f'[设备-NemuIpc] 通道序使用手动配置: {order}')
+            impl.channel_order = order
+            impl.channel_order_verified = True
             return order
 
-        detected = self.nemu_ipc_calibrate_channel(impl)
-        if detected:
-            try:
-                self.config.Emulator_NemuIpcChannelDetected = detected
-            except Exception as e:
-                logger.warning(f'[设备-NemuIpc] 校准结果写入配置失败: {e}')
-            logger.attr('NemuIpc 通道序', f'{detected}（自动校准）')
-            return detected
+        if impl.channel_order_verified:
+            return impl.channel_order
 
-        fallback = 'bgra' if impl.bgra_layout else 'rgba'
-        logger.info(f'[设备-NemuIpc] 通道序回退为按 SDK 架构推断: {fallback}')
-        return fallback
+        now = time.time()
+        if now - impl.channel_order_last_try >= self.CHANNEL_RECALIBRATE_INTERVAL:
+            impl.channel_order_last_try = now
+            detected = self.nemu_ipc_calibrate_channel(impl)
+            if detected:
+                impl.channel_order = detected
+                impl.channel_order_verified = True
+                try:
+                    self.config.Emulator_NemuIpcChannelDetected = detected
+                except Exception as e:
+                    logger.warning(f'[设备-NemuIpc] 校准结果写入配置失败: {e}')
+                logger.attr('NemuIpc 通道序', f'{detected}（自动校准）')
+                return detected
+            if impl.channel_order is None:
+                impl.channel_order = self._fallback_channel_order(impl)
+                logger.warning(
+                    f'[设备-NemuIpc] 通道序尚未校准，暂用 {impl.channel_order}，'
+                    f'{self.CHANNEL_RECALIBRATE_INTERVAL:g}s 后重试'
+                )
+        return impl.channel_order
 
     def screenshot_nemu_ipc(self):
         impl = self.nemu_ipc
-        if impl.channel_order is None:
-            impl.channel_order = self._resolve_channel_order(impl)
+        channel_order = self._ensure_channel_order(impl)
 
         image = impl.screenshot()
-        if impl.channel_order == 'bgra':
+        if channel_order == 'bgra':
             image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
         else:
             image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
