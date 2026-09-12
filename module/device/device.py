@@ -269,7 +269,7 @@ class Device(Screenshot, Control, AppControl, Input):
         # nemu_ipc 和 ldopengl 在非对应模拟器上回退到 auto
         if self.config.Emulator_ScreenshotMethod == 'nemu_ipc':
             if not (self.is_emulator and self.is_mumu_family):
-                logger.warning('[设备-方法] 截图方式nemu_ipc仅支持MuMu模拟器12，回退到auto')
+                logger.warning('[设备-方法] 截图方式nemu_ipc仅支持MuMu模拟器，回退到auto')
                 self.config.Emulator_ScreenshotMethod = 'auto'
         if self.config.Emulator_ScreenshotMethod == 'ldopengl':
             if not (self.is_emulator and self.is_ldplayer_bluestacks_family):
