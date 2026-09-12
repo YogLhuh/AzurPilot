@@ -13,7 +13,7 @@ import unittest
 import cv2
 import numpy as np
 
-from module.device.method.nemu_ipc import NemuIpcImpl
+from module.device.method.nemu_ipc import NemuIpc, NemuIpcImpl
 
 
 def build_fake_install(root, versions=('12.0',), instance_names=('MuMuPlayer-12.0-0',)):
@@ -193,6 +193,43 @@ class TestDecideChannelOrder(unittest.TestCase):
         frame = np.zeros((64, 64, 3), dtype=np.uint8)
         raw = self._make_raw(frame)
         self.assertIsNone(NemuIpcImpl._decide_channel_order(raw, frame))
+
+
+class TestCalibrateChannelOrder(unittest.TestCase):
+    """校准调用方的真值帧约定回归。
+
+    cv2.imdecode 得到 BGR 内存，而 _decide_channel_order 按代码库统一的
+    RGB 内存比较；调用方漏了 BGR2RGB 时判定恒定取反，nemu_ipc 截图红蓝
+    反转会导致按钮认不出来（2026-09-13 智能调度卡死即由此引起）。
+    这里走真实调用方，只把 ADB 与 IPC 换成假实现。
+    """
+
+    @staticmethod
+    def _png_of(frame):
+        """把 RGB 内存帧编码为 screencap 风格的 PNG 字节。"""
+        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        return cv2.imencode('.png', bgr)[1].tobytes()
+
+    def _calibrate(self, frame, raw):
+        class _Host:
+            adb_exec_out = staticmethod(lambda args: self._png_of(frame))
+
+        class _Impl:
+            screenshot = staticmethod(lambda timeout=0: raw)
+
+        return NemuIpc.nemu_ipc_calibrate_channel(_Host, _Impl)
+
+    def test_rgba_raw_detected_as_rgba(self):
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        frame[:, :, 2] = 200  # 蓝色画面
+        raw = cv2.flip(cv2.cvtColor(frame, cv2.COLOR_RGB2RGBA), 0)
+        self.assertEqual(self._calibrate(frame, raw), 'rgba')
+
+    def test_bgra_raw_detected_as_bgra(self):
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        frame[:, :, 0] = 200  # 红色画面
+        raw = cv2.flip(cv2.cvtColor(frame, cv2.COLOR_RGB2BGRA), 0)
+        self.assertEqual(self._calibrate(frame, raw), 'bgra')
 
 
 if __name__ == '__main__':
